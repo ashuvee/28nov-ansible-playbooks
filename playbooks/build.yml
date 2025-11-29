@@ -1,142 +1,52 @@
 ---
-# Build Server Configuration Playbook
-# This playbook configures a build server with Maven and Docker
-# for building and containerizing Java applications.
-
-
 - name: Configure Build Server (Maven + Docker)
   hosts: build
   become: true
 
   vars:
-    # Java configuration
-    java_package: "openjdk-17-jdk"
-
-    # Maven configuration
-    maven_package: "maven"
-
-    # Docker repository configuration
-    docker_repo_url: "https://download.docker.com/linux/ubuntu"
-    docker_gpg_key_url: "https://download.docker.com/linux/ubuntu/gpg"
-    docker_gpg_key_path: "/etc/apt/trusted.gpg.d/docker.asc"
-
-    # User to add to docker group (customize as needed)
-    docker_users:
-      - ubuntu
+    docker_users: [ubuntu]
 
   tasks:
-    # ========================================
-    # Java and Maven Installation
-    # ========================================
-    - name: Update apt cache
-      apt:
-        update_cache: true
-        cache_valid_time: 3600
-      changed_when: false
-
-    - name: Install Java Development Kit
-      apt:
-        name: "{{ java_package }}"
-        state: present
-
-    - name: Install Maven
-      apt:
-        name: "{{ maven_package }}"
-        state: present
-
-    - name: Verify Maven installation
-      command: mvn --version
-      register: maven_version_output
-      changed_when: false
-      failed_when: maven_version_output.rc != 0
-
-    # ========================================
-    # Docker Installation
-    # ========================================
-    - name: Install Docker prerequisites
+    - name: Install Java, Maven, and Docker dependencies
       apt:
         name:
+          - openjdk-17-jdk
+          - maven
           - apt-transport-https
           - ca-certificates
           - curl
           - gnupg
           - lsb-release
         state: present
+        update_cache: true
 
-    - name: Check if Docker GPG key exists
-      stat:
-        path: "{{ docker_gpg_key_path }}"
-      register: docker_key_stat
-
-    - name: Download Docker GPG key
+    - name: Add Docker GPG key
       get_url:
-        url: "{{ docker_gpg_key_url }}"
-        dest: "{{ docker_gpg_key_path }}"
-        mode: "0644"
-      when: not docker_key_stat.stat.exists
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/trusted.gpg.d/docker.asc
+        mode: '0644'
 
-    - name: Add Docker APT repository
+    - name: Add Docker repository
       apt_repository:
-        repo: "deb [arch=amd64] {{ docker_repo_url }} {{ ansible_distribution_release }} stable"
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
         filename: docker
+        state: present
+
+    - name: Install Docker packages
+      apt:
+        name: [docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin]
         state: present
         update_cache: true
 
-    - name: Install Docker Engine and components
-      apt:
-        name:
-          - docker-ce
-          - docker-ce-cli
-          - containerd.io
-          - docker-compose-plugin
-        state: present
-
-    # ========================================
-    # Docker Configuration
-    # ========================================
-    - name: Ensure Docker group exists
-      group:
-        name: docker
-        state: present
-
-    - name: Add users to docker group
+    - name: Configure Docker users and service
       user:
         name: "{{ item }}"
         groups: docker
         append: true
       loop: "{{ docker_users }}"
-      when: docker_users is defined and docker_users | length > 0
 
-    - name: Start and enable Docker service
+    - name: Ensure Docker is running
       systemd:
         name: docker
         state: started
         enabled: true
-        daemon_reload: true
-
-    - name: Verify Docker installation
-      command: docker --version
-      register: docker_version_output
-      changed_when: false
-      failed_when: docker_version_output.rc != 0
-
-    # ========================================
-    # Display Configuration Summary
-    # ========================================
-    - name: Display build server configuration
-      debug:
-        msg:
-          - "========================================="
-          - "Build Server Configuration Complete!"
-          - "========================================="
-          - "Java: {{ maven_version_output.stdout_lines[0] | default('Installed') }}"
-          - "Maven: {{ maven_version_output.stdout_lines[1] | default('Installed') }}"
-          - "Docker: {{ docker_version_output.stdout | default('Installed') }}"
-          - "========================================="
-          - "Users added to docker group: {{ docker_users | join(', ') }}"
-          - "========================================="
-          - "Next Steps:"
-          - "1. Users need to log out and back in for docker group to take effect"
-          - "2. Test with: docker run hello-world"
-          - "3. Test Maven with: mvn --version"
-          - "========================================="

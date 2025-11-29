@@ -1,134 +1,57 @@
 ---
-# Jenkins Installation and Configuration Playbook
-# This playbook installs the latest Jenkins from the official repository
-# and performs initial setup on Debian/Ubuntu systems.
-#
-
-
-- name: Install and configure Jenkins
+- name: Install Jenkins
   hosts: jenkins
   become: true
 
   vars:
-    # Jenkins repository configuration
-    jenkins_repo_url: "https://pkg.jenkins.io/debian"
-    jenkins_repo_key_url: "https://pkg.jenkins.io/debian/jenkins.io-2023.key"
-    jenkins_repo_keyring_path: "/usr/share/keyrings/jenkins-keyring.asc"
-
-    # Java version to install
-    java_package: "openjdk-21-jre"
-
-    # Jenkins service configuration
-    jenkins_http_port: 8080
-    jenkins_startup_timeout: 60
-    jenkins_startup_delay: 3
-
-    # Jenkins home directory
-    jenkins_home: "/var/lib/jenkins"
+    jenkins_port: 8080
+    java_package: openjdk-21-jre
 
   tasks:
-    # ========================================
-    # Prerequisites Installation
-    # ========================================
-    - name: Update apt cache
+    - name: Install Java and dependencies
       apt:
-        update_cache: true
-        cache_valid_time: 3600
-      changed_when: false
-
-    - name: Install required packages
-      apt:
-        name:
-          - "{{ java_package }}"
-          - gnupg
-          - curl
-          - apt-transport-https
-        state: present
-
-    # ========================================
-    # Repository Configuration
-    # ========================================
-    - name: Check if Jenkins GPG key exists
-      stat:
-        path: "{{ jenkins_repo_keyring_path }}"
-      register: jenkins_key_stat
-
-    - name: Download Jenkins GPG key
-      get_url:
-        url: "{{ jenkins_repo_key_url }}"
-        dest: "{{ jenkins_repo_keyring_path }}"
-        mode: "0644"
-      when: not jenkins_key_stat.stat.exists
-
-    - name: Add Jenkins APT repository
-      apt_repository:
-        repo: "deb [signed-by={{ jenkins_repo_keyring_path }}] {{ jenkins_repo_url }} binary/"
-        filename: jenkins
+        name: ["{{ java_package }}", gnupg, curl, apt-transport-https]
         state: present
         update_cache: true
 
-    # ========================================
-    # Jenkins Installation
-    # ========================================
+    - name: Add Jenkins key and repo
+      block:
+        - name: Download key
+          get_url:
+            url: https://pkg.jenkins.io/debian/jenkins.io-2023.key
+            dest: /usr/share/keyrings/jenkins-keyring.asc
+            mode: '0644'
+        - name: Add repo
+          apt_repository:
+            repo: "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian binary/"
+            filename: jenkins
+            state: present
+
     - name: Install Jenkins
       apt:
         name: jenkins
         state: present
         update_cache: true
 
-    # ========================================
-    # Service Configuration
-    # ========================================
-    - name: Ensure Jenkins service is started and enabled
+    - name: Start Jenkins Service
       systemd:
         name: jenkins
         state: started
         enabled: true
-        daemon_reload: true
 
     - name: Wait for Jenkins to start
       wait_for:
-        port: "{{ jenkins_http_port }}"
-        host: 127.0.0.1
-        delay: "{{ jenkins_startup_delay }}"
-        timeout: "{{ jenkins_startup_timeout }}"
-        msg: "Jenkins failed to start within {{ jenkins_startup_timeout }} seconds"
+        port: "{{ jenkins_port }}"
+        timeout: 60
 
-    # ========================================
-    # Initial Setup Information
-    # ========================================
-    - name: Check if initial admin password file exists
-      stat:
-        path: "{{ jenkins_home }}/secrets/initialAdminPassword"
-      register: admin_password_file
-
-    - name: Retrieve initial admin password
+    - name: Get Admin Password
       slurp:
-        src: "{{ jenkins_home }}/secrets/initialAdminPassword"
-      register: jenkins_initial_password
-      when: admin_password_file.stat.exists
-      no_log: false
+        src: /var/lib/jenkins/secrets/initialAdminPassword
+      register: admin_pass
+      ignore_errors: true
 
-    - name: Display Jenkins access information
+    - name: Show Jenkins Info
       debug:
         msg:
-          - "========================================="
-          - "Jenkins Installation Complete!"
-          - "========================================="
-          - "Access URL: http://{{ ansible_default_ipv4.address }}:{{ jenkins_http_port }}"
-          - "Initial Admin Password: {{ jenkins_initial_password.content | b64decode | trim }}"
-          - "========================================="
-          - "Next Steps:"
-          - "1. Open the URL in your browser"
-          - "2. Enter the initial admin password"
-          - "3. Install suggested plugins or select specific plugins"
-          - "4. Create your first admin user"
-          - "========================================="
-      when: admin_password_file.stat.exists
-
-    - name: Warning if password file not found
-      debug:
-        msg:
-          - "WARNING: Initial admin password file not found!"
-          - "This may indicate Jenkins is already configured or there was an installation issue."
-      when: not admin_password_file.stat.exists
+          - "URL: http://{{ ansible_default_ipv4.address }}:{{ jenkins_port }}"
+          - "Password: {{ admin_pass.content | b64decode | trim if admin_pass.content is defined else 'Not found (check /var/lib/jenkins/secrets/initialAdminPassword)' }}"
