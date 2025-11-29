@@ -1,0 +1,132 @@
+---
+- name: Install and Configure Nexus Repository Manager
+  hosts: nexus
+  become: true
+  vars:
+    nexus_version: "3.85.0-03"
+    nexus_download_url: "https://download.sonatype.com/nexus/3/nexus-{{ nexus_version }}-linux-x86_64.tar.gz"
+    nexus_install_dir: "/opt"
+    nexus_user: "nexus"
+    nexus_group: "nexus"
+
+  tasks:
+    - name: Download Nexus
+      ansible.builtin.get_url:
+        url: "{{ nexus_download_url }}"
+        dest: "/tmp/nexus-{{ nexus_version }}-linux-x86_64.tar.gz"
+        mode: '0644'
+
+    - name: Extract Nexus to /opt
+      ansible.builtin.unarchive:
+        src: "/tmp/nexus-{{ nexus_version }}-linux-x86_64.tar.gz"
+        dest: "{{ nexus_install_dir }}"
+        remote_src: true
+        creates: "{{ nexus_install_dir }}/nexus-{{ nexus_version }}"
+
+    - name: Create Nexus group
+      ansible.builtin.group:
+        name: "{{ nexus_group }}"
+        state: present
+
+    - name: Create Nexus user
+      ansible.builtin.user:
+        name: "{{ nexus_user }}"
+        group: "{{ nexus_group }}"
+        system: true
+        create_home: false
+        shell: /bin/false
+        comment: "Nexus Repository Manager User"
+
+    - name: Set ownership of Nexus directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: "{{ nexus_user }}"
+        group: "{{ nexus_group }}"
+        recurse: true
+      loop:
+        - "{{ nexus_install_dir }}/nexus-{{ nexus_version }}"
+        - "{{ nexus_install_dir }}/sonatype-work"
+
+    - name: Check if /opt/nexus is a directory
+      ansible.builtin.stat:
+        path: "{{ nexus_install_dir }}/nexus"
+      register: nexus_symlink_check
+
+    - name: Remove /opt/nexus if it is a directory (not a symlink)
+      ansible.builtin.file:
+        path: "{{ nexus_install_dir }}/nexus"
+        state: absent
+      when: nexus_symlink_check.stat.exists and nexus_symlink_check.stat.isdir and not nexus_symlink_check.stat.islnk
+
+    - name: Create symbolic link for Nexus
+      ansible.builtin.file:
+        src: "{{ nexus_install_dir }}/nexus-{{ nexus_version }}"
+        dest: "{{ nexus_install_dir }}/nexus"
+        state: link
+        owner: "{{ nexus_user }}"
+        group: "{{ nexus_group }}"
+
+    - name: Configure run_as_user in nexus.rc
+      ansible.builtin.lineinfile:
+        path: "{{ nexus_install_dir }}/nexus/bin/nexus.rc"
+        regexp: '^#?run_as_user='
+        line: 'run_as_user="{{ nexus_user }}"'
+        create: true
+
+    - name: Configure JVM memory settings in nexus.vmoptions
+      ansible.builtin.blockinfile:
+        path: "{{ nexus_install_dir }}/nexus/bin/nexus.vmoptions"
+        block: |
+          -Xms1024m
+          -Xmx1024m
+          -XX:MaxDirectMemorySize=1024m
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+
+    - name: Create Nexus systemd service file
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/nexus.service
+        content: |
+          [Unit]
+          Description=Nexus Repository Manager
+          After=network.target
+
+          [Service]
+          Type=forking
+          LimitNOFILE=65536
+          ExecStart={{ nexus_install_dir }}/nexus/bin/nexus start
+          ExecStop={{ nexus_install_dir }}/nexus/bin/nexus stop
+          User={{ nexus_user }}
+          Restart=on-abort
+          TimeoutSec=600
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+      notify: Reload systemd
+
+    - name: Enable and start Nexus service
+      ansible.builtin.systemd:
+        name: nexus
+        enabled: true
+        state: started
+
+    - name: Wait for Nexus to start and generate admin.password
+      ansible.builtin.wait_for:
+        path: "{{ nexus_install_dir }}/sonatype-work/nexus3/admin.password"
+        state: present
+        timeout: 300
+      register: admin_password_file
+
+    - name: Read Nexus admin password
+      ansible.builtin.slurp:
+        src: "{{ nexus_install_dir }}/sonatype-work/nexus3/admin.password"
+      register: nexus_admin_password_b64
+
+    - name: Display Nexus admin password
+      ansible.builtin.debug:
+        msg: "Nexus Admin Password: {{ nexus_admin_password_b64['content'] | b64decode }}"
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
