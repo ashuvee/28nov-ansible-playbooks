@@ -1,0 +1,281 @@
+---
+# SonarQube Installation Playbook
+# This playbook deploys SonarQube with PostgreSQL using Docker Compose
+# for continuous code quality inspection and security analysis.
+#
+# Usage:
+#   ansible-playbook -i inventory sonar.yml
+#
+# Requirements:
+#   - Debian/Ubuntu target system
+#   - Sudo/root access
+#   - Internet connectivity
+#   - At least 4GB RAM recommended
+
+- name: Deploy SonarQube with Docker Compose
+  hosts: sonarqube
+  become: true
+
+  vars:
+    # Docker repository configuration
+    docker_repo_url: "https://download.docker.com/linux/ubuntu"
+    docker_gpg_key_url: "https://download.docker.com/linux/ubuntu/gpg"
+    docker_gpg_key_path: "/etc/apt/trusted.gpg.d/docker.asc"
+
+    # SonarQube configuration
+    sonarqube_version: "10.2-community"
+    sonarqube_port: 9000
+    sonarqube_startup_timeout: 300
+
+    # PostgreSQL configuration
+    postgres_version: "14"
+    postgres_user: "sonar"
+    postgres_password: "sonarpassword"
+    postgres_db: "sonar"
+
+    # Installation paths
+    sonarqube_install_dir: "/opt/sonarqube"
+    sonarqube_data_dir: "{{ sonarqube_install_dir }}/postgresql"
+
+    # System configuration
+    vm_max_map_count: 262144
+
+    # User to add to docker group (customize as needed)
+    docker_users:
+      - ubuntu
+
+  tasks:
+    # ========================================
+    # Docker Installation
+    # ========================================
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+      changed_when: false
+
+    - name: Install Docker prerequisites
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+
+    - name: Check if Docker GPG key exists
+      stat:
+        path: "{{ docker_gpg_key_path }}"
+      register: docker_key_stat
+
+    - name: Download Docker GPG key
+      get_url:
+        url: "{{ docker_gpg_key_url }}"
+        dest: "{{ docker_gpg_key_path }}"
+        mode: "0644"
+      when: not docker_key_stat.stat.exists
+
+    - name: Add Docker APT repository
+      apt_repository:
+        repo: "deb [arch=amd64] {{ docker_repo_url }} {{ ansible_distribution_release }} stable"
+        filename: docker
+        state: present
+        update_cache: true
+
+    - name: Install Docker Engine and components
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+
+    # ========================================
+    # Docker Configuration
+    # ========================================
+    - name: Ensure Docker group exists
+      group:
+        name: docker
+        state: present
+
+    - name: Add users to docker group
+      user:
+        name: "{{ item }}"
+        groups: docker
+        append: true
+      loop: "{{ docker_users }}"
+      when: docker_users is defined and docker_users | length > 0
+
+    - name: Start and enable Docker service
+      systemd:
+        name: docker
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    # ========================================
+    # System Configuration for SonarQube
+    # ========================================
+    - name: Configure vm.max_map_count for Elasticsearch
+      sysctl:
+        name: vm.max_map_count
+        value: "{{ vm_max_map_count }}"
+        state: present
+        sysctl_set: true
+        reload: true
+
+    - name: Make vm.max_map_count persistent
+      lineinfile:
+        path: /etc/sysctl.conf
+        regexp: "^vm.max_map_count"
+        line: "vm.max_map_count={{ vm_max_map_count }}"
+        state: present
+
+    # ========================================
+    # SonarQube Directory Setup
+    # ========================================
+    - name: Create SonarQube installation directory
+      file:
+        path: "{{ sonarqube_install_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Create PostgreSQL data directory
+      file:
+        path: "{{ sonarqube_data_dir }}"
+        state: directory
+        mode: "0755"
+
+    # ========================================
+    # Docker Compose Configuration
+    # ========================================
+    - name: Create docker-compose.yml for SonarQube
+      copy:
+        dest: "{{ sonarqube_install_dir }}/docker-compose.yml"
+        mode: "0644"
+        content: |
+          version: '3.8'
+
+          services:
+            postgres:
+              image: postgres:{{ postgres_version }}
+              container_name: sonarqube-postgres
+              restart: unless-stopped
+              environment:
+                POSTGRES_USER: {{ postgres_user }}
+                POSTGRES_PASSWORD: {{ postgres_password }}
+                POSTGRES_DB: {{ postgres_db }}
+              volumes:
+                - ./postgresql:/var/lib/postgresql/data
+              networks:
+                - sonarnet
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U {{ postgres_user }}"]
+                interval: 10s
+                timeout: 5s
+                retries: 5
+
+            sonarqube:
+              image: sonarqube:{{ sonarqube_version }}
+              container_name: sonarqube
+              restart: unless-stopped
+              depends_on:
+                postgres:
+                  condition: service_healthy
+              environment:
+                SONAR_JDBC_URL: jdbc:postgresql://postgres:5432/{{ postgres_db }}
+                SONAR_JDBC_USERNAME: {{ postgres_user }}
+                SONAR_JDBC_PASSWORD: {{ postgres_password }}
+              ports:
+                - "{{ sonarqube_port }}:9000"
+              volumes:
+                - sonarqube_data:/opt/sonarqube/data
+                - sonarqube_logs:/opt/sonarqube/logs
+                - sonarqube_extensions:/opt/sonarqube/extensions
+              networks:
+                - sonarnet
+              healthcheck:
+                test: ["CMD-SHELL", "wget -q --spider http://localhost:9000/api/system/status || exit 1"]
+                interval: 30s
+                timeout: 10s
+                retries: 5
+                start_period: 60s
+
+          networks:
+            sonarnet:
+              driver: bridge
+
+          volumes:
+            sonarqube_data:
+            sonarqube_logs:
+            sonarqube_extensions:
+
+    # ========================================
+    # Deploy SonarQube
+    # ========================================
+    - name: Pull latest SonarQube and PostgreSQL images
+      command: docker compose pull
+      args:
+        chdir: "{{ sonarqube_install_dir }}"
+      register: docker_pull_result
+      changed_when: "'Pulled' in docker_pull_result.stdout or 'Downloaded' in docker_pull_result.stdout"
+
+    - name: Start SonarQube with Docker Compose
+      command: docker compose up -d
+      args:
+        chdir: "{{ sonarqube_install_dir }}"
+      register: sonarqube_deployment
+      changed_when: "'Started' in sonarqube_deployment.stdout or 'Created' in sonarqube_deployment.stdout"
+
+    - name: Wait for SonarQube to be ready
+      wait_for:
+        host: 127.0.0.1
+        port: "{{ sonarqube_port }}"
+        delay: 10
+        timeout: "{{ sonarqube_startup_timeout }}"
+        msg: "SonarQube failed to start within {{ sonarqube_startup_timeout }} seconds"
+
+    - name: Wait for SonarQube API to be responsive
+      uri:
+        url: "http://127.0.0.1:{{ sonarqube_port }}/api/system/status"
+        method: GET
+        status_code: 200
+      register: sonarqube_api_check
+      until: sonarqube_api_check.status == 200
+      retries: 30
+      delay: 10
+      ignore_errors: true
+
+    # ========================================
+    # Display Configuration Summary
+    # ========================================
+    - name: Display SonarQube access information
+      debug:
+        msg:
+          - "========================================="
+          - "SonarQube Installation Complete!"
+          - "========================================="
+          - "Version: {{ sonarqube_version }}"
+          - "Access URL: http://{{ ansible_default_ipv4.address }}:{{ sonarqube_port }}"
+          - "Default Username: admin"
+          - "Default Password: admin"
+          - "========================================="
+          - "Database Configuration:"
+          - "  Type: PostgreSQL {{ postgres_version }}"
+          - "  Database: {{ postgres_db }}"
+          - "  User: {{ postgres_user }}"
+          - "========================================="
+          - "Next Steps:"
+          - "1. Open the URL in your browser"
+          - "2. Sign in with admin/admin"
+          - "3. Change the admin password immediately"
+          - "4. Configure quality profiles and gates"
+          - "5. Generate a token for CI/CD integration"
+          - "========================================="
+          - "Management Commands:"
+          - "  Start: docker compose -f {{ sonarqube_install_dir }}/docker-compose.yml up -d"
+          - "  Stop: docker compose -f {{ sonarqube_install_dir }}/docker-compose.yml down"
+          - "  Logs: docker compose -f {{ sonarqube_install_dir }}/docker-compose.yml logs -f"
+          - "========================================="

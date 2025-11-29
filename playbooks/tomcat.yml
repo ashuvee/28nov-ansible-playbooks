@@ -1,0 +1,335 @@
+---
+# Apache Tomcat Installation Playbook
+# This playbook installs and configures Apache Tomcat application server
+# for deploying Java web applications.
+#
+# Usage:
+#   ansible-playbook -i inventory tomcat.yml
+#
+# Requirements:
+#   - Debian/Ubuntu target system
+#   - Sudo/root access
+#   - Internet connectivity
+
+- name: Install and configure Apache Tomcat
+  hosts: tomcat
+  become: true
+
+  vars:
+    # Tomcat version configuration
+    tomcat_major_version: "9"
+    tomcat_version: "9.0.80"
+    tomcat_download_url: "https://archive.apache.org/dist/tomcat/tomcat-{{ tomcat_major_version }}/v{{ tomcat_version }}/bin/apache-tomcat-{{ tomcat_version }}.tar.gz"
+
+    # Java configuration
+    java_package: "openjdk-11-jdk"
+    java_home: "/usr/lib/jvm/java-11-openjdk-amd64"
+
+    # Tomcat installation paths
+    tomcat_install_dir: "/opt/tomcat"
+    tomcat_user: "tomcat"
+    tomcat_group: "tomcat"
+
+    # Tomcat service configuration
+    tomcat_http_port: 8080
+    tomcat_shutdown_port: 8005
+    tomcat_startup_timeout: 60
+
+    # Tomcat manager users (CHANGE THESE IN PRODUCTION!)
+    tomcat_admin_user: "admin"
+    tomcat_admin_password: "admin123"
+    tomcat_deployer_user: "deployer"
+    tomcat_deployer_password: "deployer123"
+
+  tasks:
+    # ========================================
+    # Prerequisites Installation
+    # ========================================
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+      changed_when: false
+
+    - name: Install Java Development Kit
+      apt:
+        name: "{{ java_package }}"
+        state: present
+
+    - name: Verify Java installation
+      command: java -version
+      register: java_version_output
+      changed_when: false
+      failed_when: java_version_output.rc != 0
+
+    # ========================================
+    # User and Directory Setup
+    # ========================================
+    - name: Create Tomcat system group
+      group:
+        name: "{{ tomcat_group }}"
+        state: present
+        system: true
+
+    - name: Create Tomcat system user
+      user:
+        name: "{{ tomcat_user }}"
+        group: "{{ tomcat_group }}"
+        create_home: false
+        home: "{{ tomcat_install_dir }}"
+        shell: /bin/false
+        system: true
+        state: present
+
+    - name: Create Tomcat installation directory
+      file:
+        path: "{{ tomcat_install_dir }}"
+        state: directory
+        owner: "{{ tomcat_user }}"
+        group: "{{ tomcat_group }}"
+        mode: "0755"
+
+    # ========================================
+    # Tomcat Installation
+    # ========================================
+    - name: Check if Tomcat is already installed
+      stat:
+        path: "{{ tomcat_install_dir }}/bin/catalina.sh"
+      register: tomcat_binary
+
+    - name: Download Tomcat archive
+      get_url:
+        url: "{{ tomcat_download_url }}"
+        dest: "/tmp/apache-tomcat-{{ tomcat_version }}.tar.gz"
+        mode: "0644"
+        timeout: 300
+      when: not tomcat_binary.stat.exists
+
+    - name: Extract Tomcat archive
+      unarchive:
+        src: "/tmp/apache-tomcat-{{ tomcat_version }}.tar.gz"
+        dest: "{{ tomcat_install_dir }}"
+        remote_src: true
+        owner: "{{ tomcat_user }}"
+        group: "{{ tomcat_group }}"
+        extra_opts:
+          - "--strip-components=1"
+      when: not tomcat_binary.stat.exists
+
+    - name: Remove Tomcat archive
+      file:
+        path: "/tmp/apache-tomcat-{{ tomcat_version }}.tar.gz"
+        state: absent
+
+    # ========================================
+    # Tomcat Configuration
+    # ========================================
+    - name: Set executable permissions on Tomcat scripts
+      file:
+        path: "{{ tomcat_install_dir }}/bin"
+        state: directory
+        owner: "{{ tomcat_user }}"
+        group: "{{ tomcat_group }}"
+        mode: "0755"
+        recurse: true
+
+    - name: Make Tomcat shell scripts executable
+      file:
+        path: "{{ tomcat_install_dir }}/bin/{{ item }}"
+        mode: "0755"
+      loop:
+        - catalina.sh
+        - startup.sh
+        - shutdown.sh
+
+    - name: Configure Tomcat manager users
+      copy:
+        dest: "{{ tomcat_install_dir }}/conf/tomcat-users.xml"
+        owner: "{{ tomcat_user }}"
+        group: "{{ tomcat_group }}"
+        mode: "0644"
+        content: |
+          <?xml version='1.0' encoding='utf-8'?>
+          <!--
+            WARNING: These are default credentials for demonstration purposes.
+            CHANGE THESE PASSWORDS in production environments!
+          -->
+          <tomcat-users xmlns="http://tomcat.apache.org/xml"
+                        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                        xsi:schemaLocation="http://tomcat.apache.org/xml tomcat-users.xsd"
+                        version="1.0">
+            <!-- Manager roles -->
+            <role rolename="manager-gui"/>
+            <role rolename="manager-script"/>
+            <role rolename="manager-jmx"/>
+            <role rolename="manager-status"/>
+
+            <!-- Admin user with GUI access -->
+            <user username="{{ tomcat_admin_user }}"
+                  password="{{ tomcat_admin_password }}"
+                  roles="manager-gui,manager-status"/>
+
+            <!-- Deployer user for CI/CD -->
+            <user username="{{ tomcat_deployer_user }}"
+                  password="{{ tomcat_deployer_password }}"
+                  roles="manager-script"/>
+          </tomcat-users>
+
+    - name: Allow remote access to Tomcat Manager (GUI)
+      copy:
+        dest: "{{ tomcat_install_dir }}/webapps/manager/META-INF/context.xml"
+        owner: "{{ tomcat_user }}"
+        group: "{{ tomcat_group }}"
+        mode: "0644"
+        content: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!--
+            Licensed to the Apache Software Foundation (ASF) under one or more
+            contributor license agreements.  See the NOTICE file distributed with
+            this work for additional information regarding copyright ownership.
+            The ASF licenses this file to You under the Apache License, Version 2.0
+            (the "License"); you may not use this file except in compliance with
+            the License.  You may obtain a copy of the License at
+
+                http://www.apache.org/licenses/LICENSE-2.0
+
+            Unless required by applicable law or agreed to in writing, software
+            distributed under the License is distributed on an "AS IS" BASIS,
+            WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+            See the License for the specific language governing permissions and
+            limitations under the License.
+          -->
+          <Context antiResourceLocking="false" privileged="true" >
+            <CookieProcessor className="org.apache.tomcat.util.http.Rfc6265CookieProcessor"
+                             sameSiteCookies="strict" />
+            <!-- Remote access enabled - WARNING: This allows access from any IP -->
+            <!--
+            <Valve className="org.apache.catalina.valves.RemoteAddrValve"
+                   allow="127\.\d+\.\d+\.\d+|::1|0:0:0:0:0:0:0:1" />
+            -->
+            <Manager sessionAttributeValueClassNameFilter="java\.lang\.(?:Boolean|Integer|Long|Number|String)|org\.apache\.catalina\.filters\.CsrfPreventionFilter\$LruCache(?:\$1)?|java\.util\.(?:Linked)?HashMap"/>
+          </Context>
+
+    - name: Allow remote access to Tomcat Host Manager
+      copy:
+        dest: "{{ tomcat_install_dir }}/webapps/host-manager/META-INF/context.xml"
+        owner: "{{ tomcat_user }}"
+        group: "{{ tomcat_group }}"
+        mode: "0644"
+        content: |
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Context antiResourceLocking="false" privileged="true" >
+            <CookieProcessor className="org.apache.tomcat.util.http.Rfc6265CookieProcessor"
+                             sameSiteCookies="strict" />
+            <!-- Remote access enabled - WARNING: This allows access from any IP -->
+            <!--
+            <Valve className="org.apache.catalina.valves.RemoteAddrValve"
+                   allow="127\.\d+\.\d+\.\d+|::1|0:0:0:0:0:0:0:1" />
+            -->
+            <Manager sessionAttributeValueClassNameFilter="java\.lang\.(?:Boolean|Integer|Long|Number|String)|org\.apache\.catalina\.filters\.CsrfPreventionFilter\$LruCache(?:\$1)?|java\.util\.(?:Linked)?HashMap"/>
+          </Context>
+
+    # ========================================
+    # Systemd Service Configuration
+    # ========================================
+    - name: Create Tomcat systemd service file
+      copy:
+        dest: /etc/systemd/system/tomcat.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Apache Tomcat {{ tomcat_major_version }} Web Application Server
+          After=network.target
+
+          [Service]
+          Type=forking
+          User={{ tomcat_user }}
+          Group={{ tomcat_group }}
+
+          Environment="JAVA_HOME={{ java_home }}"
+          Environment="CATALINA_HOME={{ tomcat_install_dir }}"
+          Environment="CATALINA_BASE={{ tomcat_install_dir }}"
+          Environment="CATALINA_PID={{ tomcat_install_dir }}/temp/tomcat.pid"
+          Environment="CATALINA_OPTS=-Xms512M -Xmx1024M -server -XX:+UseParallelGC"
+
+          ExecStart={{ tomcat_install_dir }}/bin/startup.sh
+          ExecStop={{ tomcat_install_dir }}/bin/shutdown.sh
+
+          Restart=on-failure
+          RestartSec=10
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Reload systemd
+
+    # ========================================
+    # Service Management
+    # ========================================
+    - name: Start and enable Tomcat service
+      systemd:
+        name: tomcat
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Wait for Tomcat to start
+      wait_for:
+        port: "{{ tomcat_http_port }}"
+        host: 127.0.0.1
+        delay: 5
+        timeout: "{{ tomcat_startup_timeout }}"
+        msg: "Tomcat failed to start within {{ tomcat_startup_timeout }} seconds"
+
+    - name: Verify Tomcat is responding
+      uri:
+        url: "http://127.0.0.1:{{ tomcat_http_port }}"
+        method: GET
+        status_code: 200
+      register: tomcat_http_check
+      until: tomcat_http_check.status == 200
+      retries: 5
+      delay: 5
+      ignore_errors: true
+
+    # ========================================
+    # Display Configuration Summary
+    # ========================================
+    - name: Display Tomcat access information
+      debug:
+        msg:
+          - "========================================="
+          - "Apache Tomcat Installation Complete!"
+          - "========================================="
+          - "Version: {{ tomcat_version }}"
+          - "Access URL: http://{{ ansible_default_ipv4.address }}:{{ tomcat_http_port }}"
+          - "Manager URL: http://{{ ansible_default_ipv4.address }}:{{ tomcat_http_port }}/manager"
+          - "========================================="
+          - "Manager Credentials:"
+          - "  Admin User: {{ tomcat_admin_user }}"
+          - "  Admin Password: {{ tomcat_admin_password }}"
+          - "  Deployer User: {{ tomcat_deployer_user }}"
+          - "  Deployer Password: {{ tomcat_deployer_password }}"
+          - "========================================="
+          - "WARNING: Change default passwords in production!"
+          - "Edit: {{ tomcat_install_dir }}/conf/tomcat-users.xml"
+          - "========================================="
+          - "Next Steps:"
+          - "1. Access the Manager UI to verify installation"
+          - "2. Change default passwords"
+          - "3. Deploy your WAR files via Manager or CI/CD"
+          - "4. Configure SSL/TLS for production use"
+          - "========================================="
+          - "Management Commands:"
+          - "  Start: systemctl start tomcat"
+          - "  Stop: systemctl stop tomcat"
+          - "  Restart: systemctl restart tomcat"
+          - "  Status: systemctl status tomcat"
+          - "  Logs: journalctl -u tomcat -f"
+          - "========================================="
+
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: true
