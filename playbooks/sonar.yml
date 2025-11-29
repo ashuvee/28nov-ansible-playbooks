@@ -3,14 +3,7 @@
 # This playbook deploys SonarQube with PostgreSQL using Docker Compose
 # for continuous code quality inspection and security analysis.
 #
-# Usage:
-#   ansible-playbook -i inventory sonar.yml
-#
-# Requirements:
-#   - Debian/Ubuntu target system
-#   - Sudo/root access
-#   - Internet connectivity
-#   - At least 4GB RAM recommended
+
 
 - name: Deploy SonarQube with Docker Compose
   hosts: sonarqube

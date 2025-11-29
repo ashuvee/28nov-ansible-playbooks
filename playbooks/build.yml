@@ -2,14 +2,7 @@
 # Build Server Configuration Playbook
 # This playbook configures a build server with Maven and Docker
 # for building and containerizing Java applications.
-#
-# Usage:
-#   ansible-playbook -i inventory build.yml
-#
-# Requirements:
-#   - Debian/Ubuntu target system
-#   - Sudo/root access
-#   - Internet connectivity
+
 
 - name: Configure Build Server (Maven + Docker)
   hosts: build

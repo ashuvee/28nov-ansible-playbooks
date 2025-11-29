@@ -3,13 +3,7 @@
 # This playbook installs the latest Jenkins from the official repository
 # and performs initial setup on Debian/Ubuntu systems.
 #
-# Usage:
-#   ansible-playbook -i inventory jenkins.yml
-#
-# Requirements:
-#   - Debian/Ubuntu target system
-#   - Sudo/root access
-#   - Internet connectivity
+
 
 - name: Install and configure Jenkins
   hosts: jenkins

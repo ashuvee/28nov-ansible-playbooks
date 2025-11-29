@@ -3,13 +3,7 @@
 # This playbook installs and configures Apache Tomcat application server
 # for deploying Java web applications.
 #
-# Usage:
-#   ansible-playbook -i inventory tomcat.yml
-#
-# Requirements:
-#   - Debian/Ubuntu target system
-#   - Sudo/root access
-#   - Internet connectivity
+
 
 - name: Install and configure Apache Tomcat
   hosts: tomcat
