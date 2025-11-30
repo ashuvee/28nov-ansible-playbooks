@@ -3,40 +3,21 @@
   hosts: tomcat
   become: yes
   vars:
-    war_file: "target/ROOT.war"
     tomcat_webapps: "/opt/tomcat/webapps"
 
   tasks:
-    - name: Stop Tomcat service
-      systemd:
-        name: tomcat
-        state: stopped
-
-    - name: Remove old application
-      file:
-        path: "{{ tomcat_webapps }}/ROOT"
-        state: absent
-
-    - name: Remove old WAR file
-      file:
-        path: "{{ tomcat_webapps }}/ROOT.war"
-        state: absent
-
-    - name: Copy new WAR file
-      copy:
-        src: "{{ war_file }}"
-        dest: "{{ tomcat_webapps }}/ROOT.war"
-        owner: tomcat
-        group: tomcat
-        mode: '0644'
-
-    - name: Start Tomcat service
-      systemd:
-        name: tomcat
-        state: started
-
-    - name: Wait for Tomcat to start
-      wait_for:
-        port: 8080
-        delay: 10
-        timeout: 60
+    - name: Redeploy Application
+      block:
+        - systemd: { name: tomcat, state: stopped }
+        - file:
+            path: "{{ tomcat_webapps }}/{{ item }}"
+            state: absent
+          loop: [ROOT, ROOT.war]
+        - copy:
+            src: "target/ROOT.war"
+            dest: "{{ tomcat_webapps }}/ROOT.war"
+            owner: tomcat
+            group: tomcat
+            mode: '0644'
+        - systemd: { name: tomcat, state: started }
+        - wait_for: { port: 8080, delay: 10, timeout: 60 }

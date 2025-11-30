@@ -3,66 +3,56 @@
   hosts: build
   become: yes
   vars:
-    workspace: "{{ lookup('env', 'WORKSPACE') }}"
-    settings_file: "{{ workspace }}/settings.xml"
-    pom_file: "{{ workspace }}/pom.xml"
-    docker_registry: "docker.io"
+    remote_workspace: "/tmp/builds/{{ build_number }}"
+    mvn_cmd: "mvn -s {{ remote_workspace }}/settings.xml -f {{ remote_workspace }}/pom.xml"
 
   tasks:
-    # --- Build Stage ---
-    - name: Maven Clean Compile
-      command: "mvn -s {{ settings_file }} clean compile -f {{ pom_file }}"
+    - name: Setup Workspace
+      block:
+        - file: { path: "{{ remote_workspace }}", state: directory, mode: '0755' }
+        - copy: { src: "{{ workspace }}/", dest: "{{ remote_workspace }}/" }
       tags: build
 
-    # --- Test Stage ---
+    - name: Maven Stages
+      command: "{{ mvn_cmd }} {{ item }}"
+      loop:
+        - "clean compile"
+      tags: build
+
     - name: Maven Test
-      command: "mvn -s {{ settings_file }} test -f {{ pom_file }}"
+      command: "{{ mvn_cmd }} test"
       tags: test
 
-    # --- SonarQube Stage ---
-    - name: Maven Sonar Analysis
+    - name: Sonar Analysis
       command: >
-        mvn -s {{ settings_file }} sonar:sonar
-        -f {{ pom_file }}
+        {{ mvn_cmd }} sonar:sonar
         -Dsonar.projectKey=password-generator-{{ build_number }}
         -Dsonar.projectName=PasswordGenerator
         -Dsonar.host.url={{ sonar_url }}
         -Dsonar.login={{ sonar_token }}
       tags: sonar
 
-    # --- Package Stage ---
-    - name: Maven Package
-      command: "mvn -s {{ settings_file }} package -DskipTests -f {{ pom_file }}"
+    - name: Package
+      command: "{{ mvn_cmd }} package -DskipTests"
       tags: package
 
-    # --- Nexus Stage ---
-    - name: Maven Deploy to Nexus
+    - name: Nexus Deploy
       command: >
-        mvn -s {{ settings_file }} deploy -DskipTests
-        -f {{ pom_file }}
+        {{ mvn_cmd }} deploy -DskipTests
         -DaltDeploymentRepository=nexus-releases::default::{{ nexus_url }}/repository/maven-releases/
       tags: nexus
 
-    # --- Docker Stage ---
-    - name: Build Docker Image
-      command: "docker build -t {{ image_name }}:{{ build_number }} -f {{ workspace }}/Dockerfile {{ workspace }}"
+    - name: Docker Build & Push
+      block:
+        - docker_login: { username: "{{ docker_user }}", password: "{{ docker_pass }}" }
+        - shell: |
+            cd {{ remote_workspace }}
+            docker build -t {{ image_name }}:{{ build_number }} .
+            docker push {{ image_name }}:{{ build_number }}
+            docker tag {{ image_name }}:{{ build_number }} {{ image_name }}:latest
+            docker push {{ image_name }}:latest
       tags: docker
 
-    - name: Login to Docker Hub
-      docker_login:
-        username: "{{ docker_user }}"
-        password: "{{ docker_pass }}"
-        registry_url: "{{ docker_registry }}"
-      tags: docker
-
-    - name: Push Docker Image
-      command: "docker push {{ image_name }}:{{ build_number }}"
-      tags: docker
-
-    - name: Push Docker Latest Tag
-      command: "docker tag {{ image_name }}:{{ build_number }} {{ image_name }}:latest"
-      tags: docker
-
-    - name: Push Docker Latest
-      command: "docker push {{ image_name }}:latest"
-      tags: docker
+    - name: Cleanup
+      file: { path: "{{ remote_workspace }}", state: absent }
+      tags: cleanup
