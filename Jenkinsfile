@@ -85,10 +85,12 @@ pipeline {
 
         stage('Deploy to Tomcat') {
             steps {
-                sh '''
-                    curl -u deployer:deployer123 --upload-file target/ROOT.war \
-                         ${TOMCAT_URL}/manager/text/deploy?path=/&update=true
-                '''
+                withCredentials([usernamePassword(credentialsId: 'tomcat-cred', usernameVariable: 'TOMCAT_USER', passwordVariable: 'TOMCAT_PASS')]) {
+                    sh '''
+                        curl -u ${TOMCAT_USER}:${TOMCAT_PASS} --upload-file target/ROOT.war \
+                             ${TOMCAT_URL}/manager/text/deploy?path=/&update=true
+                    '''
+                }
             }
         }
     }
