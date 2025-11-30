@@ -7,12 +7,12 @@ pipeline {
     }
 
     environment {
-        SONAR_URL = "http://sonar-01:9000"
-        NEXUS_URL = "http://nexus-01:8081"
+        SONAR_URL = credentials('sonar-url')
+        NEXUS_URL = credentials('nexus-url')
         DOCKER_REGISTRY = "docker.io"
         // TODO: Update with your Docker Hub username
         IMAGE_NAME = "ashuz/password-generator"
-        TOMCAT_URL = "http://tomcat-01:8080"
+        TOMCAT_URL = credentials('tomcat-url')
         NEXUS_USERNAME = "admin"
         NEXUS_PASSWORD = "admin123"
     }
@@ -27,13 +27,13 @@ pipeline {
 
         stage('Maven Build') {
             steps {
-                sh 'mvn clean compile'
+                sh 'mvn -s settings.xml clean compile'
             }
         }
 
         stage('Unit Tests') {
             steps {
-                sh 'mvn test'
+                sh 'mvn -s settings.xml test'
             }
             post {
                 always {
@@ -46,7 +46,7 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                     sh '''
-                        mvn sonar:sonar \
+                        mvn -s settings.xml sonar:sonar \
                           -Dsonar.projectKey=password-generator-${BUILD_NUMBER} \
                           -Dsonar.projectName=PasswordGenerator \
                           -Dsonar.host.url=${SONAR_URL} \
@@ -58,14 +58,14 @@ pipeline {
 
         stage('Maven Package') {
             steps {
-                sh 'mvn package -DskipTests'
+                sh 'mvn -s settings.xml package -DskipTests'
             }
         }
 
         stage('Deploy to Nexus') {
             steps {
                 sh '''
-                    mvn deploy -DskipTests \
+                    mvn -s settings.xml deploy -DskipTests \
                       -DaltDeploymentRepository=nexus-releases::default::${NEXUS_URL}/repository/maven-releases/
                 '''
             }
