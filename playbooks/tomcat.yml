@@ -85,6 +85,13 @@
           WantedBy=multi-user.target
       notify: Restart Tomcat
 
+    - name: Start Tomcat
+      systemd:
+        name: tomcat
+        state: started
+        enabled: true
+        daemon_reload: true
+
     - name: Wait for Tomcat
       wait_for:
         port: "{{ tomcat_port }}"
