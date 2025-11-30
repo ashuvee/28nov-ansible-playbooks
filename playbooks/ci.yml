@@ -1,0 +1,68 @@
+---
+- name: CI Pipeline
+  hosts: build
+  become: yes
+  vars:
+    workspace: "{{ lookup('env', 'WORKSPACE') }}"
+    settings_file: "{{ workspace }}/settings.xml"
+    pom_file: "{{ workspace }}/pom.xml"
+    docker_registry: "docker.io"
+
+  tasks:
+    # --- Build Stage ---
+    - name: Maven Clean Compile
+      command: "mvn -s {{ settings_file }} clean compile -f {{ pom_file }}"
+      tags: build
+
+    # --- Test Stage ---
+    - name: Maven Test
+      command: "mvn -s {{ settings_file }} test -f {{ pom_file }}"
+      tags: test
+
+    # --- SonarQube Stage ---
+    - name: Maven Sonar Analysis
+      command: >
+        mvn -s {{ settings_file }} sonar:sonar
+        -f {{ pom_file }}
+        -Dsonar.projectKey=password-generator-{{ build_number }}
+        -Dsonar.projectName=PasswordGenerator
+        -Dsonar.host.url={{ sonar_url }}
+        -Dsonar.login={{ sonar_token }}
+      tags: sonar
+
+    # --- Package Stage ---
+    - name: Maven Package
+      command: "mvn -s {{ settings_file }} package -DskipTests -f {{ pom_file }}"
+      tags: package
+
+    # --- Nexus Stage ---
+    - name: Maven Deploy to Nexus
+      command: >
+        mvn -s {{ settings_file }} deploy -DskipTests
+        -f {{ pom_file }}
+        -DaltDeploymentRepository=nexus-releases::default::{{ nexus_url }}/repository/maven-releases/
+      tags: nexus
+
+    # --- Docker Stage ---
+    - name: Build Docker Image
+      command: "docker build -t {{ image_name }}:{{ build_number }} -f {{ workspace }}/Dockerfile {{ workspace }}"
+      tags: docker
+
+    - name: Login to Docker Hub
+      docker_login:
+        username: "{{ docker_user }}"
+        password: "{{ docker_pass }}"
+        registry_url: "{{ docker_registry }}"
+      tags: docker
+
+    - name: Push Docker Image
+      command: "docker push {{ image_name }}:{{ build_number }}"
+      tags: docker
+
+    - name: Push Docker Latest Tag
+      command: "docker tag {{ image_name }}:{{ build_number }} {{ image_name }}:latest"
+      tags: docker
+
+    - name: Push Docker Latest
+      command: "docker push {{ image_name }}:latest"
+      tags: docker

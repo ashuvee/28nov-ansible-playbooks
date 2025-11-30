@@ -1,10 +1,7 @@
 pipeline {
-    agent { label 'build' }  // Run on build-01
+    agent any
 
-    tools {
-        maven 'Maven-3.9'
-        jdk 'JDK-17'
-    }
+
 
     environment {
         SONAR_URL = credentials('sonar-url')
@@ -15,6 +12,7 @@ pipeline {
         TOMCAT_URL = credentials('tomcat-url')
         NEXUS_USERNAME = "admin"
         NEXUS_PASSWORD = "admin123"
+        INVENTORY = credentials('hosts-ini')
     }
 
     stages {
@@ -27,13 +25,35 @@ pipeline {
 
         stage('Maven Build') {
             steps {
-                sh 'mvn -s settings.xml clean compile'
+                ansiblePlaybook(
+                    playbook: 'playbooks/ci.yml',
+                    inventory: "${INVENTORY}",
+                    installation: 'Ansible-Default',
+                    credentialsId: 'ssh-key',
+                    disableHostKeyChecking: true,
+                    colorized: true,
+                    tags: 'build',
+                    extraVars: [
+                        workspace: "${WORKSPACE}"
+                    ]
+                )
             }
         }
 
         stage('Unit Tests') {
             steps {
-                sh 'mvn -s settings.xml test'
+                ansiblePlaybook(
+                    playbook: 'playbooks/ci.yml',
+                    inventory: "${INVENTORY}",
+                    installation: 'Ansible-Default',
+                    credentialsId: 'ssh-key',
+                    disableHostKeyChecking: true,
+                    colorized: true,
+                    tags: 'test',
+                    extraVars: [
+                        workspace: "${WORKSPACE}"
+                    ]
+                )
             }
             post {
                 always {
@@ -45,52 +65,93 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                    sh '''
-                        mvn -s settings.xml sonar:sonar \
-                          -Dsonar.projectKey=password-generator-${BUILD_NUMBER} \
-                          -Dsonar.projectName=PasswordGenerator \
-                          -Dsonar.host.url=${SONAR_URL} \
-                          -Dsonar.login=${SONAR_TOKEN}
-                    '''
+                    ansiblePlaybook(
+                        playbook: 'playbooks/ci.yml',
+                        inventory: "${INVENTORY}",
+                        installation: 'Ansible-Default',
+                        credentialsId: 'ssh-key',
+                        disableHostKeyChecking: true,
+                        colorized: true,
+                        tags: 'sonar',
+                        extraVars: [
+                            workspace: "${WORKSPACE}",
+                            sonar_url: "${SONAR_URL}",
+                            sonar_token: "${SONAR_TOKEN}",
+                            build_number: "${BUILD_NUMBER}"
+                        ]
+                    )
                 }
             }
         }
 
         stage('Maven Package') {
             steps {
-                sh 'mvn -s settings.xml package -DskipTests'
+                ansiblePlaybook(
+                    playbook: 'playbooks/ci.yml',
+                    inventory: "${INVENTORY}",
+                    installation: 'Ansible-Default',
+                    credentialsId: 'ssh-key',
+                    disableHostKeyChecking: true,
+                    colorized: true,
+                    tags: 'package',
+                    extraVars: [
+                        workspace: "${WORKSPACE}"
+                    ]
+                )
             }
         }
 
         stage('Deploy to Nexus') {
             steps {
-                sh '''
-                    mvn -s settings.xml deploy -DskipTests \
-                      -DaltDeploymentRepository=nexus-releases::default::${NEXUS_URL}/repository/maven-releases/
-                '''
+                ansiblePlaybook(
+                    playbook: 'playbooks/ci.yml',
+                    inventory: "${INVENTORY}",
+                    installation: 'Ansible-Default',
+                    credentialsId: 'ssh-key',
+                    disableHostKeyChecking: true,
+                    colorized: true,
+                    tags: 'nexus',
+                    extraVars: [
+                        workspace: "${WORKSPACE}",
+                        nexus_url: "${NEXUS_URL}"
+                    ]
+                )
             }
         }
 
         stage('Docker Build & Push') {
             steps {
-                script {
-                    def dockerImage = docker.build("${IMAGE_NAME}:${BUILD_NUMBER}", "-f Dockerfile .")
-                    docker.withRegistry("https://${DOCKER_REGISTRY}", "docker-hub-token") {
-                        dockerImage.push()
-                        dockerImage.push('latest')
-                    }
+                withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    ansiblePlaybook(
+                        playbook: 'playbooks/ci.yml',
+                        inventory: "${INVENTORY}",
+                        installation: 'Ansible-Default',
+                        credentialsId: 'ssh-key',
+                        disableHostKeyChecking: true,
+                        colorized: true,
+                        tags: 'docker',
+                        extraVars: [
+                            workspace: "${WORKSPACE}",
+                            image_name: "${IMAGE_NAME}",
+                            build_number: "${BUILD_NUMBER}",
+                            docker_user: "${DOCKER_USER}",
+                            docker_pass: "${DOCKER_PASS}"
+                        ]
+                    )
                 }
             }
         }
 
         stage('Deploy to Tomcat') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'tomcat-cred', usernameVariable: 'TOMCAT_USER', passwordVariable: 'TOMCAT_PASS')]) {
-                    sh '''
-                        curl -u ${TOMCAT_USER}:${TOMCAT_PASS} --upload-file target/ROOT.war \
-                             ${TOMCAT_URL}/manager/text/deploy?path=/&update=true
-                    '''
-                }
+                ansiblePlaybook(
+                    playbook: 'playbooks/deploy.yml',
+                    inventory: "${INVENTORY}",
+                    installation: 'Ansible-Default',
+                    credentialsId: 'ssh-key',
+                    disableHostKeyChecking: true,
+                    colorized: true
+                )
             }
         }
     }
