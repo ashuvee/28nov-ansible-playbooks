@@ -1,133 +1,205 @@
-# DevOps Pipeline Configuration
+# CI/CD Pipeline Automation with Ansible
 
-This directory contains the Ansible configuration files and playbooks for deploying the complete CI/CD pipeline.
+Automated deployment of a complete DevOps pipeline using Ansible playbooks. This project sets up Jenkins, SonarQube, Nexus, and Tomcat on separate servers with a dedicated build server.
 
-## Service Port Configuration
+## Architecture
 
-**Important:** Jenkins has been configured to run on port **8080** instead of the default port 8080.
+| Service | Purpose | Port |
+|---------|---------|------|
+| **Jenkins** | CI/CD orchestration | 8080 |
+| **SonarQube** | Code quality analysis | 9000 |
+| **Nexus** | Artifact repository | 8081 |
+| **Tomcat** | Application server | 8080 |
+| **Build Server** | Maven + Docker builds |  |
 
-| Service | Server | Port | Access URL | Purpose |
-|---------|--------|------|------------|---------|
-| Jenkins | jenkins-ctl | 8080 | `http://<JENKINS-IP>:8080` | Pipeline orchestration |
-| SonarQube | sonar-01 | 9000 | `http://<SONAR-IP>:9000` | Code quality analysis |
-| Nexus | nexus-01 | 8081 | `http://<NEXUS-IP>:8081` | Artifact repository |
-| Tomcat | tomcat-01 | 8080 | `http://<TOMCAT-IP>:8080` | Application deployment |
-| Docker | build-01 | 2375 | SSH only | Build execution |
+## Prerequisites
 
-## Configuration Files
+- 5 Ubuntu servers (EC2 instances or VMs)
+- Ansible installed on your local machine
+- SSH access to all servers (key-based authentication)
+- Security groups allowing required ports
 
-### hosts.ini
-Ansible inventory file containing all server definitions. **You must update this file with your actual EC2 public IP addresses** after launching the instances.
+## Quick Start
 
-**Placeholders to replace:**
-- `JIP` - Jenkins server public IP
-- `SIP` - SonarQube server public IP
-- `NIP` - Nexus server public IP
-- `BIP` - Build server public IP
-- `TIP` - Tomcat server public IP
+### 1. Create Inventory File
 
-### Playbooks Directory
+Create `hosts.ini` with your server IPs:
 
-Contains 5 Ansible playbooks for automated deployment:
+```ini
+[jenkins]
+<JENKINS_IP> ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/your-key.pem
 
-1. **jenkins.yml** - Installs Jenkins controller with OpenJDK 17
-2. **sonar.yml** - Deploys SonarQube 10.2 with PostgreSQL via Docker Compose
-3. **nexus.yml** - Sets up Nexus Repository Manager 3.62.0
-4. **build.yml** - Configures build server with Maven and Docker
-5. **tomcat.yml** - Installs Tomcat 9 application server
+[sonar]
+<SONAR_IP> ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/your-key.pem
 
-## Usage
+[nexus]
+<NEXUS_IP> ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/your-key.pem
 
-### 1. Update Inventory File
-```bash
-cd /path/to/devops-pipeline
-vim hosts.ini  # Replace JIP, SIP, NIP, BIP, TIP with actual IPs
+[build]
+<BUILD_IP> ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/your-key.pem
+
+[tomcat]
+<TOMCAT_IP> ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/your-key.pem
 ```
 
 ### 2. Test Connectivity
+
 ```bash
-ANSIBLE_HOST_KEY_CHECKING=False ansible all -i hosts.ini -m ping
+ansible all -i hosts.ini -m ping
 ```
 
-Expected: SUCCESS from all 5 hosts
+### 3. Deploy Services
 
-### 3. Deploy All Services
+Run playbooks in order:
+
 ```bash
-# Deploy in order
-ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i hosts.ini playbooks/jenkins.yml
-ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i hosts.ini playbooks/sonar.yml
-ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i hosts.ini playbooks/nexus.yml
-ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i hosts.ini playbooks/build.yml
-ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i hosts.ini playbooks/tomcat.yml
+# Deploy Jenkins
+ansible-playbook -i hosts.ini playbooks/jenkins.yml
+
+# Deploy SonarQube
+ansible-playbook -i hosts.ini playbooks/sonar.yml
+
+# Deploy Nexus
+ansible-playbook -i hosts.ini playbooks/nexus.yml
+
+# Configure Build Server
+ansible-playbook -i hosts.ini playbooks/build.yml
+
+# Deploy Tomcat
+ansible-playbook -i hosts.ini playbooks/tomcat.yml
 ```
 
-### 4. Access Services
+## Initial Access
 
-After deployment, access your services at:
+### Jenkins (`http://<JENKINS_IP>:8080`)
+```bash
+# Get initial admin password
+ansible jenkins -i hosts.ini -a "cat /var/lib/jenkins/secrets/initialAdminPassword"
+```
 
-- **Jenkins**: http://&lt;JENKINS-IP&gt;:**8080**
-  - Get admin password: `ansible jenkins -i hosts.ini -a "cat /var/lib/jenkins/secrets/initialAdminPassword"`
-  - Initial setup required (install plugins, create admin user)
+### SonarQube (`http://<SONAR_IP>:9000`)
+- Default: `admin` / `admin` (change on first login)
 
-- **SonarQube**: http://&lt;SONAR-IP&gt;:9000
-  - Default credentials: admin/admin (change on first login)
-  - Create authentication token for Jenkins pipeline
+### Nexus (`http://<NEXUS_IP>:8081`)
+```bash
+# Get initial admin password
+ansible nexus -i hosts.ini -a "cat /opt/nexus-data/admin.password"
+```
 
-- **Nexus**: http://&lt;NEXUS-IP&gt;:8081
-  - Get admin password: `ansible nexus -i hosts.ini -a "cat /opt/nexus-data/admin.password"`
-  - Create maven-releases repository
+### Tomcat (`http://<TOMCAT_IP>:8080`)
+- Manager: `admin` / `admin123`
+- Deployer: `deployer` / `deployer123`
 
-- **Tomcat**: http://&lt;TOMCAT-IP&gt;:8080
-  - Manager credentials: admin/admin123
-  - Deployer credentials: deployer/deployer123
+## What Each Playbook Does
 
-## Important Notes
+| Playbook | Installs |
+|----------|----------|
+| `jenkins.yml` | OpenJDK 17, Jenkins LTS |
+| `sonar.yml` | Docker, PostgreSQL, SonarQube 10.2 |
+| `nexus.yml` | OpenJDK 8, Nexus Repository 3.62.0 |
+| `build.yml` | Maven 3.9, Docker, Git |
+| `tomcat.yml` | OpenJDK 11, Tomcat 9 |
 
-### Jenkins Port 8080 Configuration
-Jenkins is configured to run on port 8080. This is noted in:
-- Security group rules (make sure to allow inbound traffic on port 8080)
-- Jenkins URL configuration in Jenkins system settings
-- This helps avoid conflicts with Tomcat which also uses port 8080
+## Post-Deployment Configuration
 
-### Port Conflicts
-- **Jenkins**: Uses 8080 (non-standard) to avoid conflict with Tomcat
-- **Tomcat**: Uses 8080 (standard)
-- **Nexus**: Uses 8081 (non-standard)
-- **SonarQube**: Uses 9000 (standard)
+### 1. Install Jenkins Plugins
 
-Ensure your security groups allow access to all these ports from your IP address.
+1. Log in to Jenkins at `http://<JENKINS_IP>:8080`
+2. Navigate to **Manage Jenkins** → **Plugins** → **Available Plugins**
+3. Install these plugins (select "Install without restart"):
+   - `Ansible`
+   - `Pipeline`
+   - `Docker Pipeline` (or `docker-workflow`)
+
+### 2. Add Jenkins Credentials
+
+Go to **Manage Jenkins** → **Credentials** → **System** → **Global credentials** → **Add Credentials**
+
+| Type | ID | Username | Password/Secret | Description |
+|------|----|-----------|--------------------|-------------|
+| SSH Username with private key | `ssh-key` | `ubuntu` | Paste `devops-key.pem` content | SSH Key for Agents |
+| Secret text | `sonar-token` | - | Your SonarQube Token | SonarQube Token |
+| Username with password | `nexus-cred` | `admin` | `admin123` (or new password) | Nexus Admin Credentials |
+| Secret text | `docker-hub-token` | - | Your Docker Hub Access Token | Docker Hub Token |
+| Username with password | `docker-hub-creds` | Your Docker Hub Username | Your Docker Hub Password/Token | Docker Hub Credentials |
+| Secret text | `sonar-url` | - | `http://<SONAR_IP>:9000` | SonarQube URL |
+| Secret text | `nexus-url` | - | `http://<NEXUS_IP>:8081` | Nexus URL |
+| Secret text | `tomcat-url` | - | `http://<TOMCAT_IP>:8080` | Tomcat URL |
+| Secret file | `hosts-ini` | - | Upload your `hosts.ini` file | Ansible Inventory File |
+
+**Important:** When creating the `hosts.ini` file for Jenkins, use this format (without SSH key paths):
+
+```ini
+[jenkins]
+<JENKINS_IP> ansible_user=ubuntu
+
+[sonar]
+<SONAR_IP> ansible_user=ubuntu
+
+[nexus]
+<NEXUS_IP> ansible_user=ubuntu
+
+[build]
+<BUILD_IP> ansible_user=ubuntu
+
+[tomcat]
+<TOMCAT_IP> ansible_user=ubuntu
+```
+
+The SSH authentication is handled by Jenkins using the `ssh-key` credential in the pipeline.
+
+### 3. Create Pipeline Job
+
+1. Click **New Item** → Enter name `devops-pipeline` → Select **Pipeline** → **OK**
+2. Scroll to **Pipeline** section
+3. Set **Definition**: `Pipeline script from SCM`
+4. Set **SCM**: `Git`
+5. Enter **Repository URL**: Your Git repository URL
+6. Set **Branch Specifier**: `*/main`
+7. Set **Script Path**: `Jenkinsfile`
+8. Click **Save**
+
+### 4. Run Your First Build
+
+Click **Build Now** and monitor the pipeline progress!
 
 ## Troubleshooting
 
-### Unable to connect to Jenkins on port 8080
-**Solution**: Jenkins runs on port 8080. Use http://&lt;JENKINS-IP&gt;:8080
+**Connection refused errors:**
+- Check security groups allow required ports
+- Verify SSH key permissions: `chmod 400 ~/.ssh/your-key.pem`
 
-### Port already in use errors
-**Solution**: The services use different ports to avoid conflicts:
-- Jenkins: 8080
-- Tomcat: 8080
-- Nexus: 8081
-
-### Docker socket permission denied
-**Solution**: Make sure the ubuntu user is in the docker group:
+**Service not starting:**
 ```bash
+# Check service status
+ansible <group> -i hosts.ini -a "systemctl status <service>"
+
+# View logs
+ansible <group> -i hosts.ini -a "journalctl -u <service> -n 50"
+```
+
+**Docker permission denied:**
+```bash
+# Verify user in docker group
 ansible build -i hosts.ini -a "groups ubuntu"
 ```
-If not, re-run the build playbook to add the user to the docker group.
 
-## Next Steps
+## Project Structure
 
-After all services are deployed:
-1. Configure Jenkins credentials (SSH key, SonarQube token, Nexus credentials, Docker Hub token)
-2. Configure Jenkins tools (JDK-17, Maven-3.9, Ansible)
-3. Create Jenkins pipeline job pointing to your Git repository
-4. Run your first build!
+```
+.
+├── playbooks/
+│   ├── jenkins.yml      # Jenkins controller setup
+│   ├── sonar.yml        # SonarQube with PostgreSQL
+│   ├── nexus.yml        # Nexus repository manager
+│   ├── build.yml        # Build server configuration
+│   ├── tomcat.yml       # Tomcat application server
+│   ├── ci.yml           # CI pipeline tasks
+│   └── deploy.yml       # Deployment tasks
+├── src/                 # Sample Java application
+├── Dockerfile           # Application container
+├── Jenkinsfile          # Pipeline definition
+├── pom.xml              # Maven configuration
+└── README.md            # This file
+```
 
-## Security Considerations
-
-⚠️ **Important**: This is a development/testing setup. For production use:
-- Use strong passwords (change from the default admin123, deployer123)
-- Enable SSL/TLS for all services
-- Use a secrets management system (Vault, AWS Secrets Manager)
-- Restrict security group access (don't use 0.0.0.0/0)
-- Regularly update all services and apply security patches
