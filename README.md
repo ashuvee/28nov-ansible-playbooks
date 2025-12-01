@@ -12,6 +12,34 @@ Automated deployment of a complete DevOps pipeline using Ansible playbooks. This
 | **Tomcat** | Application server | 8080 |
 | **Build Server** | Maven + Docker builds |  |
 
+
+
+## **Architecture Diagram**
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                          (Ansible Controller)            │
+│                         ├── devops-key.pem                          │
+│                         ├── hosts.ini                               │
+│                         └── playbooks/*.yml                         │
+└─────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   │ SSH (Port 22)
+                                   ▼
+┌──────────────────┬──────────────────┬──────────────────┬──────────────────┬──────────────────┐
+│  jenkins-ctl     │   sonar-01       │   nexus-01       │   build-01       │   tomcat-01      │
+│  (Jenkins +      │   (SonarQube     │   (Nexus         │   (Maven +       │   (Tomcat        │
+│   Ansible)       │    + PostgreSQL) │    Repository)   │    Docker)       │    Server)       │
+│  Public IP: JIP  │   Public IP: SIP │   Public IP: NIP │   Public IP: BIP │   Public IP: TIP │
+│  Ports: 8090     │   Ports: 9000    │   Ports: 8081    │  				│   Ports: 8080    │
+└──────────────────┴──────────────────┴──────────────────┴──────────────────┴──────────────────┘
+         ▲                   ▲                  ▲                  ▲                  ▲
+         │                   │                  │                  │                  │
+         └───────────────────┴──────────────────┴──────────────────┴──────────────────┘
+                                      Jenkins SSH + Ansible Playbooks
+```
+
+
+
 ## Prerequisites
 
 - 5 Ubuntu servers (EC2 instances or VMs)
