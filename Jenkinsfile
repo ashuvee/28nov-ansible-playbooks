@@ -95,7 +95,10 @@ pipeline {
 
 def runAnsible(String tags, Map extraVars = [:]) {
     // Default variables
-    def vars = [workspace: "${WORKSPACE}"]
+    def vars = [
+        workspace: "${WORKSPACE}",
+        build_number: "${BUILD_NUMBER}"
+    ]
     vars << extraVars
 
     ansiblePlaybook(
