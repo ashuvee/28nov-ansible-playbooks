@@ -23,6 +23,22 @@
       command: "{{ mvn_cmd }} test"
       tags: test
 
+    - name: Find Test Result Files
+      find:
+        paths: "{{ remote_workspace }}/target/surefire-reports"
+        patterns: "*.xml"
+      register: test_files
+      tags: test
+
+    - name: Fetch Test Results to Jenkins
+      fetch:
+        src: "{{ item.path }}"
+        dest: "{{ workspace }}/target/surefire-reports/{{ item.path | basename }}"
+        flat: yes
+      loop: "{{ test_files.files }}"
+      when: test_files.files | length > 0
+      tags: test
+
     - name: Sonar Analysis
       command: >
         {{ mvn_cmd }} sonar:sonar
