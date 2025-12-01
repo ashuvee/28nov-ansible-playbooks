@@ -203,3 +203,10 @@ ansible build -i hosts.ini -a "groups ubuntu"
 └── README.md            # This file
 ```
 
+![](imgs/pipeline.png)
+![](imgs/pipeline2.png)
+![](imgs/sonar.png)
+![](imgs/nexus.png)
+![](imgs/dckr.png)
+![](imgs/tmcat-deploy.png)
+
