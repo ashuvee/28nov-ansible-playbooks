@@ -14,6 +14,17 @@
         state: present
         update_cache: true
 
+    - name: Install Ansible
+      apt:
+        name: ansible
+        state: present
+        update_cache: true
+
+    - name: Verify Ansible installation
+      command: ansible-playbook --version
+      register: ansible_version
+      changed_when: false
+
     - name: Add Jenkins key and repo
       block:
         - name: Download key
