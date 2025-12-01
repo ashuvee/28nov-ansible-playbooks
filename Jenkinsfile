@@ -68,7 +68,6 @@ pipeline {
                 ansiblePlaybook(
                     playbook: 'playbooks/deploy.yml',
                     inventory: "${INVENTORY}",
-                    installation: 'Ansible-Default',
                     credentialsId: 'ssh-key',
                     disableHostKeyChecking: true,
                     colorized: true
@@ -95,7 +94,6 @@ def runAnsible(String tags, Map extraVars = [:]) {
     ansiblePlaybook(
         playbook: 'playbooks/ci.yml',
         inventory: "${INVENTORY}",
-        installation: 'Ansible-Default',
         credentialsId: 'ssh-key',
         disableHostKeyChecking: true,
         colorized: true,
