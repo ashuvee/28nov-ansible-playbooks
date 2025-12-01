@@ -14,30 +14,51 @@ Automated deployment of a complete DevOps pipeline using Ansible playbooks. This
 
 
 
-## **Architecture Diagram**
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                          (Ansible Controller)            │
-│                         ├── devops-key.pem                          │
-│                         ├── hosts.ini                               │
-│                         └── playbooks/*.yml                         │
-└─────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   │ SSH (Port 22)
-                                   ▼
-┌──────────────────┬──────────────────┬──────────────────┬──────────────────┬──────────────────┐
-│  jenkins-ctl     │   sonar-01       │   nexus-01       │   build-01       │   tomcat-01      │
-│  (Jenkins +      │   (SonarQube     │   (Nexus         │   (Maven +       │   (Tomcat        │
-│   Ansible)       │    + PostgreSQL) │    Repository)   │    Docker)       │    Server)       │
-│  Public IP: JIP  │   Public IP: SIP │   Public IP: NIP │   Public IP: BIP │   Public IP: TIP │
-│  Ports: 8090     │   Ports: 9000    │   Ports: 8081    │  				│   Ports: 8080    │
-└──────────────────┴──────────────────┴──────────────────┴──────────────────┴──────────────────┘
-         ▲                   ▲                  ▲                  ▲                  ▲
-         │                   │                  │                  │                  │
-         └───────────────────┴──────────────────┴──────────────────┴──────────────────┘
-                                      Jenkins SSH + Ansible Playbooks
+## Server Setup Diagram
+
+```mermaid
+graph TB
+    AC[Ansible Controller<br/>Local Machine<br/>hosts.ini + playbooks]
+    
+    AC -->|SSH: jenkins.yml| J[Jenkins Server<br/>jenkins-ctl<br/>OpenJDK 17 + Jenkins]
+    AC -->|SSH: sonar.yml| S[SonarQube Server<br/>sonar-01<br/>Docker + PostgreSQL + SonarQube]
+    AC -->|SSH: nexus.yml| N[Nexus Server<br/>nexus-01<br/>OpenJDK 8 + Nexus 3.62.0]
+    AC -->|SSH: build.yml| B[Build Server<br/>build-01<br/>Maven 3.9 + Docker + Git]
+    AC -->|SSH: tomcat.yml| T[Tomcat Server<br/>tomcat-01<br/>OpenJDK 11 + Tomcat 9]
+
+    style AC fill:#e1f5ff
+    style J fill:#d4edda
+    style S fill:#cce5ff
+    style N fill:#f8d7da
+    style B fill:#fff3cd
+    style T fill:#d1ecf1
 ```
 
+
+
+## Architecture Diagram
+
+```mermaid
+graph LR
+    DEV[Developer] -->|Push Code| GH[GitHub]
+    GH -->|Trigger| J[Jenkins :8080<br/>jenkins-ctl]
+    
+    J -->|Ansible SSH| B[Build Server<br/>build-01]
+    
+    B -->|Maven Build & Test| B
+    B -->|Code Scan| S[SonarQube :9000]
+    B -->|Upload WAR| N[Nexus :8081]
+    B -->|Push Image| DH[Docker Hub]
+    
+    J -->|Ansible Deploy| T[Tomcat :8080<br/>tomcat-01]
+    B -.->|Fetch WAR| T
+
+    style J fill:#d4edda
+    style B fill:#fff3cd
+    style S fill:#cce5ff
+    style N fill:#f8d7da
+    style T fill:#d1ecf1
+```
 
 
 ## Prerequisites
