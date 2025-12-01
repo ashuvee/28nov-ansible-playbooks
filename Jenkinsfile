@@ -78,8 +78,15 @@ pipeline {
 
     post {
         always {
+            script {
+                // Run cleanup before deleting workspace
+                try {
+                    runAnsible('cleanup', [build_number: "${BUILD_NUMBER}"])
+                } catch (Exception e) {
+                    echo "Cleanup failed: ${e.message}"
+                }
+            }
             cleanWs()
-            runAnsible('cleanup', [build_number: "${BUILD_NUMBER}"])
         }
         success { echo "Deployed to ${TOMCAT_URL}" }
         failure { echo "Pipeline failed." }
