@@ -26,12 +26,12 @@ graph TB
     AC -->|SSH: build.yml| B[Build Server<br/>build-01<br/>Maven 3.9 + Docker + Git]
     AC -->|SSH: tomcat.yml| T[Tomcat Server<br/>tomcat-01<br/>OpenJDK 11 + Tomcat 9]
 
-    style AC fill:#e1f5ff
-    style J fill:#d4edda
-    style S fill:#cce5ff
-    style N fill:#f8d7da
-    style B fill:#fff3cd
-    style T fill:#d1ecf1
+    style AC fill:#4A90E2,stroke:#2E5C8A,stroke-width:3px,color:#fff
+    style J fill:#50C878,stroke:#2D7A4F,stroke-width:2px,color:#000
+    style S fill:#9B59B6,stroke:#6C3483,stroke-width:2px,color:#fff
+    style N fill:#E67E22,stroke:#A04000,stroke-width:2px,color:#fff
+    style B fill:#F39C12,stroke:#B8860B,stroke-width:2px,color:#000
+    style T fill:#3498DB,stroke:#1F618D,stroke-width:2px,color:#fff
 ```
 
 
@@ -53,11 +53,14 @@ graph LR
     J -->|Ansible Deploy| T[Tomcat :8080<br/>tomcat-01]
     B -.->|Fetch WAR| T
 
-    style J fill:#d4edda
-    style B fill:#fff3cd
-    style S fill:#cce5ff
-    style N fill:#f8d7da
-    style T fill:#d1ecf1
+    style DEV fill:#95A5A6,stroke:#34495E,stroke-width:2px,color:#fff
+    style GH fill:#2C3E50,stroke:#1A252F,stroke-width:2px,color:#fff
+    style J fill:#50C878,stroke:#2D7A4F,stroke-width:2px,color:#000
+    style B fill:#F39C12,stroke:#B8860B,stroke-width:2px,color:#000
+    style S fill:#9B59B6,stroke:#6C3483,stroke-width:2px,color:#fff
+    style N fill:#E67E22,stroke:#A04000,stroke-width:2px,color:#fff
+    style DH fill:#2496ED,stroke:#1A6BA8,stroke-width:2px,color:#fff
+    style T fill:#3498DB,stroke:#1F618D,stroke-width:2px,color:#fff
 ```
 
 
