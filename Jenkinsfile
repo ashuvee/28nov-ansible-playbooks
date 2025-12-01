@@ -81,20 +81,16 @@ pipeline {
 
         stage('Deploy to Tomcat') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'nexus-cred', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-                    ansiblePlaybook(
-                        playbook: 'playbooks/deploy.yml',
-                        inventory: "${INVENTORY}",
-                        credentialsId: 'ssh-key',
-                        disableHostKeyChecking: true,
-                        colorized: true,
-                        extraVars: [
-                            nexus_url: "${NEXUS_URL}",
-                            nexus_username: "${NEXUS_USER}",
-                            nexus_password: "${NEXUS_PASS}"
-                        ]
-                    )
-                }
+                ansiblePlaybook(
+                    playbook: 'playbooks/deploy.yml',
+                    inventory: "${INVENTORY}",
+                    credentialsId: 'ssh-key',
+                    disableHostKeyChecking: true,
+                    colorized: true,
+                    extraVars: [
+                        build_number: "${BUILD_NUMBER}"
+                    ]
+                )
             }
         }
     }
