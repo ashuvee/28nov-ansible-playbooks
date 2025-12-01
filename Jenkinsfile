@@ -25,7 +25,17 @@ pipeline {
 
         stage('Unit Tests') {
             steps { runAnsible('test') }
-            post { always { junit 'target/surefire-reports/*.xml' } }
+            post {
+                always {
+                    script {
+                        if (fileExists('target/surefire-reports')) {
+                            junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml'
+                        } else {
+                            echo 'No test results found - skipping test report'
+                        }
+                    }
+                }
+            }
         }
 
         stage('SonarQube Analysis') {

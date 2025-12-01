@@ -21,6 +21,17 @@
 
     - name: Maven Test
       command: "{{ mvn_cmd }} test"
+      register: test_result
+      ignore_errors: yes
+      tags: test
+
+    - name: Ensure local target directory exists
+      file:
+        path: "{{ workspace }}/target/surefire-reports"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+      become: no
       tags: test
 
     - name: Find Test Result Files
@@ -37,6 +48,12 @@
         flat: yes
       loop: "{{ test_files.files }}"
       when: test_files.files | length > 0
+      tags: test
+
+    - name: Fail if tests failed
+      fail:
+        msg: "Maven tests failed with return code {{ test_result.rc }}"
+      when: test_result.rc != 0
       tags: test
 
     - name: Sonar Analysis
