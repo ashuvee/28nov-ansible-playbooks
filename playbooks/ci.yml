@@ -73,6 +73,9 @@
       command: >
         {{ mvn_cmd }} deploy -DskipTests
         -DaltDeploymentRepository=nexus-releases::default::{{ nexus_url }}/repository/maven-releases/
+      environment:
+        NEXUS_USERNAME: "{{ nexus_username }}"
+        NEXUS_PASSWORD: "{{ nexus_password }}"
       tags: nexus
 
     - name: Docker Build & Push

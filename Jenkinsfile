@@ -56,7 +56,13 @@ pipeline {
 
         stage('Deploy to Nexus') {
             steps {
-                runAnsible('nexus', [nexus_url: "${NEXUS_URL}"])
+                withCredentials([usernamePassword(credentialsId: 'nexus-cred', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+                    runAnsible('nexus', [
+                        nexus_url: "${NEXUS_URL}",
+                        nexus_username: "${NEXUS_USER}",
+                        nexus_password: "${NEXUS_PASS}"
+                    ])
+                }
             }
         }
 
