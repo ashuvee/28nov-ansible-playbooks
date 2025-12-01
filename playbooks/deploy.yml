@@ -4,6 +4,7 @@
   become: yes
   vars:
     tomcat_webapps: "/opt/tomcat/webapps"
+    war_url: "{{ nexus_url }}/repository/maven-snapshots/com/webapp/password-generator/1.0-SNAPSHOT/password-generator-1.0-SNAPSHOT.war"
 
   tasks:
     - name: Redeploy Application
@@ -13,11 +14,15 @@
             path: "{{ tomcat_webapps }}/{{ item }}"
             state: absent
           loop: [ROOT, ROOT.war]
-        - copy:
-            src: "target/ROOT.war"
+        - name: Download WAR from Nexus
+          get_url:
+            url: "{{ war_url }}"
             dest: "{{ tomcat_webapps }}/ROOT.war"
             owner: tomcat
             group: tomcat
             mode: '0644'
+            force: yes
+            url_username: "{{ nexus_username }}"
+            url_password: "{{ nexus_password }}"
         - systemd: { name: tomcat, state: started }
         - wait_for: { port: 8080, delay: 10, timeout: 60 }
