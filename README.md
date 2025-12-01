@@ -41,7 +41,7 @@ graph TB
 ```mermaid
 graph LR
     DEV[Developer] -->|Push Code| GH[GitHub]
-    GH -->|Trigger| J[Jenkins :8080<br/>jenkins-ctl]
+    GH -->|Trigger| J[Jenkins :8080<br/>jenkins-web]
     
     J -->|Ansible SSH| B[Build Server<br/>build-01]
     
